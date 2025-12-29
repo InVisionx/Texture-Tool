@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PBR Texture Generator V4 (Plane Preview)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #0f0f13;
+            --surface-color: #1b1b1f;
+            --primary-color: #8ab4f8;
+            --accent-color: #bb86fc;
+            --text-color: #e0e0e0;
+            --border-color: #333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { margin-top: 0; letter-spacing: -1px; }
+        
+        .main-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            width: 100%;
+            max-width: 1400px;
+            justify-content: center;
+        }
+
+        .left-column { flex: 1; min-width: 400px; max-width: 600px; }
+        .right-column { flex: 2; min-width: 400px; }
+
+        .drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 30px 20px;
+            background-color: var(--surface-color);
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            margin-bottom: 20px;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--primary-color);
+            background-color: rgba(138, 180, 248, 0.05);
+        }
+
+        .controls {
+            background: var(--surface-color);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .control-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .control-group label { font-size: 0.9em; color: #aaa; }
+        input[type="range"] { accent-color: var(--primary-color); width: 60%; }
+
+        .preview-container {
+            display: flex;
+            gap: 20px;
+            height: 400px;
+            margin-bottom: 30px;
+        }
+        .preview-3d, .preview-tiling {
+            flex: 1;
+            background: #000;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            position: relative;
+        }
+        #threejs-container { width: 100%; height: 100%; }
+        #tiling-preview {
+            width: 100%; height: 100%;
+            background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23555">Drop Image</text></svg>');
+            background-repeat: repeat;
+            background-size: 33.33%; 
+        }
+        .preview-label {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(0,0,0,0.7); padding: 4px 8px;
+            border-radius: 4px; font-size: 0.8em; pointer-events: none;
+            z-index: 10;
+        }
+
+        .map-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            width: 100%;
+            opacity: 0.5; transition: opacity 0.3s; pointer-events: none;
+        }
+        .map-gallery.active { opacity: 1; pointer-events: all; }
+        .card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px; padding: 10px;
+            display: flex; flex-direction: column;
+        }
+        .card-title { font-size: 0.9em; margin-bottom: 5px; color: var(--primary-color); }
+        .card canvas {
+            width: 100%; height: auto; aspect-ratio: 1/1;
+            background-color: #1a1a1a; border-radius: 4px; margin-bottom: 10px; border: 1px solid #000;
+        }
+        .btn-download {
+            background-color: var(--surface-color); color: var(--text-color);
+            border: 1px solid var(--border-color); padding: 8px;
+            border-radius: 6px; cursor: pointer; font-size: 0.9em;
+            transition: background 0.2s; width: 100%;
+        }
+        .btn-download:hover { background-color: var(--primary-color); color: #000; border-color: var(--primary-color); }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>PBR Texture Generator (Plane View)</h1>
+
+    <div class="main-container">
+        <div class="left-column">
+            <div class="drop-zone" id="dropZone">
+                <p style="margin:0; font-size: 1.1em; color: #888;">Drag & drop texture here</p>
+                <input type="file" id="fileInput" class="hidden" accept="image/*">
+            </div>
+
+            <div class="controls">
+                <h3>Settings</h3>
+                <div class="control-group">
+                    <label>Normal Strength</label>
+                    <input type="range" id="strength" min="0.1" max="5" step="0.1" value="1.5">
+                </div>
+                <div class="control-group">
+                    <label>Displacement (Height)</label>
+                    <input type="range" id="displacement" min="0" max="1" step="0.05" value="0.2">
+                </div>
+                <div class="control-group">
+                    <label>Invert Height</label>
+                    <input type="checkbox" id="invert">
+                </div>
+                <div class="control-group">
+                    <label>Tiling Scale</label>
+                    <input type="range" id="tilescale" min="1" max="8" step="1" value="1">
+                </div>
+            </div>
+        </div>
+
+        <div class="right-column">
+            <div class="preview-container">
+                <div class="preview-3d">
+                    <span class="preview-label">3D Wall Preview</span>
+                    <div id="threejs-container"></div>
+                </div>
+                <div class="preview-tiling">
+                    <span class="preview-label">2D Seam Check</span>
+                    <div id="tiling-preview"></div>
+                </div>
+            </div>
+
+            <div class="map-gallery" id="gallery">
+                <div class="card">
+                    <span class="card-title">Normal</span>
+                    <canvas id="canvasNormal"></canvas>
+                    <button class="btn-download" onclick="downloadMap('canvasNormal', '_normal')">Download</button>
+                </div>
+                <div class="card">
+                    <span class="card-title">Height</span>
+                    <canvas id="canvasHeight"></canvas>
+                    <button class="btn-download" onclick="downloadMap('canvasHeight', '_height')">Download</button>
+                </div>
+                <div class="card">
+                    <span class="card-title">Roughness</span>
+                    <canvas id="canvasRough"></canvas>
+                    <button class="btn-download" onclick="downloadMap('canvasRough', '_roughness')">Download</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <img id="sourceImage" class="hidden">
+
+    <script>
+        // --- UI ELEMENTS ---
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const sourceImage = document.getElementById('sourceImage');
+        const gallery = document.getElementById('gallery');
+        const strengthSlider = document.getElementById('strength');
+        const dispSlider = document.getElementById('displacement');
+        const invertCheck = document.getElementById('invert');
+        const tileSlider = document.getElementById('tilescale');
+        const tilingPreviewDiv = document.getElementById('tiling-preview');
+
+        const cNormal = document.getElementById('canvasNormal').getContext('2d');
+        const cHeight = document.getElementById('canvasHeight').getContext('2d');
+        const cRough = document.getElementById('canvasRough').getContext('2d');
+
+        let fileName = "texture";
+        
+        // --- THREE.JS GLOBALS ---
+        let scene, camera, renderer, mesh, material;
+        
+        initThreeJS();
+        setupEventListeners();
+
+        function setupEventListeners() {
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+            dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+            dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+            fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+            strengthSlider.addEventListener('input', () => { if(sourceImage.src) processImages(); });
+            dispSlider.addEventListener('input', update3DMaterial);
+            invertCheck.addEventListener('change', () => { if(sourceImage.src) processImages(); });
+            tileSlider.addEventListener('input', updateTextureTiling);
+        }
+
+        // --- THREE.JS SETUP (THE PLANE UPDATE) ---
+        function initThreeJS() {
+            const container = document.getElementById('threejs-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+            scene.add(ambientLight);
+            // Light from top-right to catch the bumps
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(5, 5, 10);
+            scene.add(dirLight);
+
+            // --- CHANGED TO PLANE ---
+            // 3x3 size, 128x128 segments for detailed displacement
+            const geometry = new THREE.PlaneGeometry(3, 3, 128, 128);
+            
+            material = new THREE.MeshStandardMaterial({ 
+                color: 0xffffff, 
+                roughness: 0.5,
+                metalness: 0.1,
+                displacementScale: 0.2, 
+                side: THREE.DoubleSide // Visible from back too just in case
+            });
+            mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+
+            camera.position.z = 4.5;
+
+            // Animation Loop (Wobble)
+            let time = 0;
+            function animate() {
+                requestAnimationFrame(animate);
+                if (sourceImage.src) {
+                    time += 0.01;
+                    // Gentle sway instead of full spin
+                    mesh.rotation.y = Math.sin(time * 0.5) * 0.3; // Left/Right
+                    mesh.rotation.x = Math.sin(time * 0.3) * 0.1; // Up/Down tilt
+                }
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+        }
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            const file = files[0];
+            if (!file.type.startsWith('image/')) return;
+            
+            fileName = file.name.split('.')[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                sourceImage.src = e.target.result;
+                sourceImage.onload = () => {
+                    gallery.classList.add('active');
+                    tilingPreviewDiv.style.backgroundImage = `url(${sourceImage.src})`;
+                    processImages();
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function processImages() {
+            const w = sourceImage.width; const h = sourceImage.height;
+            [cNormal, cHeight, cRough].forEach(ctx => { ctx.canvas.width = w; ctx.canvas.height = h; });
+
+            const tempCtx = document.createElement('canvas').getContext('2d');
+            tempCtx.canvas.width = w; tempCtx.canvas.height = h;
+            tempCtx.drawImage(sourceImage, 0, 0);
+            const data = tempCtx.getImageData(0, 0, w, h).data;
+
+            const normalData = cNormal.createImageData(w, h);
+            const heightData = cHeight.createImageData(w, h);
+            const roughData = cRough.createImageData(w, h);
+
+            const strength = parseFloat(strengthSlider.value);
+            const invert = invertCheck.checked;
+
+            const getVal = (x, y) => {
+                x = (x + w) % w; y = (y + h) % h; 
+                const i = (y * w + x) * 4;
+                let val = (data[i] + data[i+1] + data[i+2]) / 3;
+                return invert ? 255 - val : val;
+            };
+
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const i = (y * w + x) * 4;
+                    let val = getVal(x, y); 
+                    // Height
+                    heightData.data[i] = heightData.data[i+1] = heightData.data[i+2] = val; heightData.data[i+3] = 255;
+                    // Roughness
+                    let rough = 255 - val;
+                    roughData.data[i] = roughData.data[i+1] = roughData.data[i+2] = rough; roughData.data[i+3] = 255;
+
+                    // Normal
+                    const tl = getVal(x-1, y-1); const t  = getVal(x,   y-1); const tr = getVal(x+1, y-1);
+                    const l  = getVal(x-1, y);                       const r  = getVal(x+1, y);
+                    const bl = getVal(x-1, y+1); const b  = getVal(x,   y+1); const br = getVal(x+1, y+1);
+                    const dX = (tr + 2*r + br) - (tl + 2*l + bl);
+                    const dY = (bl + 2*b + br) - (tl + 2*t + tr);
+                    let rNormal = (dX * strength) + 128;
+                    let gNormal = (dY * strength) + 128;
+                    normalData.data[i] = Math.min(255, Math.max(0, rNormal));
+                    normalData.data[i+1] = Math.min(255, Math.max(0, gNormal));
+                    normalData.data[i+2] = 255; normalData.data[i+3] = 255;
+                }
+            }
+            cNormal.putImageData(normalData, 0, 0);
+            cHeight.putImageData(heightData, 0, 0);
+            cRough.putImageData(roughData, 0, 0);
+
+            update3DMaterial();
+        }
+
+        function update3DMaterial() {
+            if (!material) return;
+            material.map = new THREE.CanvasTexture(sourceImage);
+            material.normalMap = new THREE.CanvasTexture(cNormal.canvas);
+            material.displacementMap = new THREE.CanvasTexture(cHeight.canvas);
+            material.roughnessMap = new THREE.CanvasTexture(cRough.canvas);
+            
+            material.displacementScale = parseFloat(dispSlider.value);
+
+            [material.map, material.normalMap, material.displacementMap, material.roughnessMap].forEach(tex => {
+                if (tex) tex.needsUpdate = true;
+            });
+            material.needsUpdate = true;
+            updateTextureTiling();
+        }
+
+        function updateTextureTiling() {
+            const repeatVal = parseInt(tileSlider.value);
+            if (!material.map) return;
+            const setRepeat = (tex) => {
+                if (!tex) return;
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.RepeatWrapping;
+                tex.repeat.set(repeatVal, repeatVal);
+                tex.needsUpdate = true;
+            };
+            setRepeat(material.map);
+            setRepeat(material.normalMap);
+            setRepeat(material.displacementMap);
+            setRepeat(material.roughnessMap);
+        }
+
+        function downloadMap(canvasId, suffix) {
+            const link = document.createElement('a');
+            link.download = fileName + suffix + '.png';
+            link.href = document.getElementById(canvasId).toDataURL();
+            link.click();
+        }
+    </script>
+</body>
+</html>
